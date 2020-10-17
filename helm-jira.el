@@ -2,6 +2,8 @@
 
 ;; Author: Roman Decker <roman dot decker at gmail dot com>
 ;; URL: https://github.com/DeX3/helm-jira
+;; Package-Version: 20180802.815
+;; Package-Commit: 75d6ed5bd7a041fa8c1adb21cbbbe57b5a7c7cc7
 ;; Created: July 19, 2018
 ;; Keywords: tools, helm, jira, bitbucket, stash
 ;; Package-Requires: ((emacs "25") (cl-lib "0.5") (helm "1.9.9"))
@@ -26,6 +28,8 @@
 ;; For more information see the README in the online repository.
 
 ;;; Code:
+(require 'cl)
+(require 'request)
 
 (defgroup helm-jira nil
   "helm-jira customization group."
@@ -87,19 +91,52 @@
   "Call `request' with the supplied `ARGS', but ensure that a password is set and credentials are supplied."
   (helm-jira-ensure-password)
   (apply 'request (append args
-                          `(:headers (("Authorization" . ,(helm-jira-build-auth-header)))))))
+                          `(:headers (("Authorization" . ,(helm-jira-build-auth-header))))
+			  '(:sync t))))
 
-(defun helm-jira-fetch-issues (callback)
-  "Fetch all open issues for the configured board and call `CALLBACK' with the resulting list."
-  (helm-jira-request
-   (format "%s/rest/agile/1.0/board/%s/issue" helm-jira-url helm-jira-board-id)
-   :params '(("fields" . "summary")
-             ("maxResults" . "200")
-             ("jql" . "sprint in openSprints()"))
-   :parser 'json-read
-   :success (function*
-             (lambda (&key data &allow-other-keys)
-               (funcall callback (alist-get 'issues data))))))
+;; original
+;; (defun helm-jira-fetch-issues (callback)
+;;   "Fetch all open issues for the configured board and call `CALLBACK' with the resulting list."
+;;   (helm-jira-request
+;;    (format "%s/rest/agile/1.0/board/%s/issue" helm-jira-url helm-jira-board-id)
+;;    :params '(("fields" . "summary")
+;;              ("maxResults" . "200")
+;;              ("jql" . "sprint in openSprints()"))
+;;    :parser 'json-read
+;;    :success (function*
+;;              (lambda (&key data &allow-other-keys)
+;;                (funcall callback (alist-get 'issues data))))))
+
+;; modified
+(defun helm-jira-fetch-issues (project-key callback)
+  "Fetch issues of specified project-key and call `CALLBACK' with the resulting list."
+  (let (issues          ; for all issues are stacked
+	nissues         ; the number of issues on each request
+	(startAt 0)     ; startAt=0 if you want to show id from 1, in case startAt=1, shows id from 2
+	(maxResults 100)) ; fixed
+
+    (helm-jira-request
+     (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=PROJECT=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults project-key)
+     :parser 'json-read
+     :success (function*
+	       (lambda (&key data &allow-other-keys)
+		 (let ((tissues (alist-get 'issues data))) ; tissues: tmp issues
+		   (setq nissues (length tissues))
+		   (setq startAt nissues)
+		   (setq issues (vconcat issues tissues))))))
+
+    (while (>= nissues maxResults)
+      (helm-jira-request
+       (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=PROJECT=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults project-key)
+       :parser 'json-read
+       :success (function*
+		 (lambda (&key data &allow-other-keys)
+		   (let ((tissues (alist-get 'issues data))) ; tissues: tmp issues
+		     (setq nissues (length tissues))
+		     (setq startAt (+ startAt nissues))
+		     (setq issues (vconcat issues tissues)))))))
+
+    (funcall callback issues)))
 
 (defun helm-jira-fetch-pull-requests (callback)
   "Fetch all open pull requests for the configured project and repo and call `CALLBACK' with the resulting list."
@@ -130,7 +167,6 @@
        `(,(format "%s: %s" key summary) . ,issue)))
    issues))
 
-
 (defun helm-jira-build-candidate-list-from-pull-requests (pull-requests)
   "Take `PULL-REQUESTS' as returned by ‘helm-jira-fetch-pull-requests’ and build a suitable candidate list for helm with it."
   (mapcar
@@ -145,18 +181,37 @@
                   (propertize (concat "@" author-name) 'font-lock-face 'font-lock-comment-face)) . ,pr)))
    pull-requests))
 
-(defun helm-jira-helm-issues ()
+;; original
+;; (defun helm-jira-helm-issues ()
+;;   "Fetch a list of issues from JIRA and prompt for selection of one."
+;;   (interactive)
+;;   (helm-jira-fetch-issues
+;;    (lambda (issues)
+;;      (let* ((helm-src
+;;              (helm-build-sync-source "jira-issues-source"
+;;                :candidates (helm-jira-build-candidate-list-from-issues issues)
+;;                :action (helm-make-actions
+;;                         "Check-out" #'helm-jira-helm-action-checkout-issue
+;;                         "Open in browser" #'helm-jira-helm-action-open-issue-in-browser))))
+;;        (helm :sources helm-src)))))
+
+;; modified
+(defun helm-jira-helm-issues (&optional project-key)
   "Fetch a list of issues from JIRA and prompt for selection of one."
   (interactive)
-  (helm-jira-fetch-issues
+
+  (unless project-key
+    (setq project-key helm-jira-project))
+
+  (helm-jira-fetch-issues project-key
    (lambda (issues)
      (let* ((helm-src
              (helm-build-sync-source "jira-issues-source"
                :candidates (helm-jira-build-candidate-list-from-issues issues)
                :action (helm-make-actions
-                        "Check-out" #'helm-jira-helm-action-checkout-issue
                         "Open in browser" #'helm-jira-helm-action-open-issue-in-browser))))
-       (helm :sources helm-src)))))
+       (helm :sources helm-src
+	     :candidate-number-limit 10000)))))
 
 (defun helm-jira-helm-pull-requests ()
   "Fetch a list of pull-requests from Bitbucket and prompt for selection of one to open in the browser."
@@ -182,11 +237,10 @@
                :action (helm-make-actions "Check-out" #'helm-jira-helm-action-checkout-pull-request))))
        (helm :sources helm-src)))))
 
-
 (defun helm-jira-helm-action-open-issue-in-browser (issue)
   "Open the given `ISSUE' in the browser."
   (let ((key (alist-get 'key issue)))
-    (browse-url (format "%s/browse/%s" helm-jira-url key))))
+    (browse-url-default-browser (format "%s/browse/%s" helm-jira-url key))))
 
 (defun helm-jira-helm-action-open-pull-request-in-browser (pull-request)
   "Open the given `PULL-REQUEST' in the browser."
@@ -216,6 +270,48 @@
                    (elt branches 0)))
          (branch-name (alist-get 'name branch)))
     (magit-checkout branch-name)))
+
+;; added, the followings
+(defun helm-jira-helm-action-list-issues (project)
+  "list `ISSUES'. of project"
+  (let ((project-key (alist-get 'key project)))
+    (helm-jira-helm-issues project-key)))
+
+(defun helm-jira-fetch-projects (callback)
+  "Fetch all projects"
+  (helm-jira-request
+   (format "%s/rest/api/latest/project" helm-jira-url)
+   :parser 'json-read
+   :success (function*
+             (lambda (&key data &allow-other-keys)
+               (funcall callback data)))))
+
+(defun helm-jira-build-candidate-list-from-projects (projects)
+  "Take `PROJECTS' as returned by‘helm-jira-fetch-projects’ and build a suitable candidate list for helm with it."
+  (mapcar
+   (lambda (project)
+     (let* ((key  (alist-get 'key  project))
+	    (name (alist-get 'name project)))
+       `(,(format "%-17s: %s" key name) . ,project)))
+   projects))
+
+(defun helm-jira-helm-action-open-project-in-browser (project)
+  "Open the given `PROJECT' in the browser."
+  (let ((key (alist-get 'key project)))
+    (browse-url-default-browser (format "%s/browse/%s" helm-jira-url key))))
+
+(defun helm-jira-helm-projects ()
+  "Fetch project list from JIRA and prompt for selection of one."
+  (interactive)
+  (helm-jira-fetch-projects
+   (lambda (projects)
+     (let* ((helm-src
+             (helm-build-sync-source "jira-projects-source"
+               :candidates (helm-jira-build-candidate-list-from-projects projects)
+               :action (helm-make-actions
+			"List Issues"     #'helm-jira-helm-action-list-issues
+                        "Open in browser" #'helm-jira-helm-action-open-project-in-browser))))
+       (helm :sources helm-src)))))
 
 (provide 'helm-jira)
 ;;; helm-jira.el ends here
