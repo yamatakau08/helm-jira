@@ -313,5 +313,39 @@
                         "Open in browser" #'helm-jira-helm-action-open-project-in-browser))))
        (helm :sources helm-src)))))
 
+;; filter
+(defun helm-jira--fetch-get-favourite-filters (callback)
+  (helm-jira-request
+   (format "%s/rest/api/latest/filter/favourite" helm-jira-url)
+   :parser 'json-read
+   :success (function*
+             (lambda (&key data &allow-other-keys)
+               (funcall callback data)))))
+
+(defun helm-jira--build-candidate-get-favourite-filters (filters)
+  "Take `FILTERS' as returned by‘helm-jira-fetch-filters’ and build a suitable candidate list for helm with it."
+  (mapcar
+   (lambda (filter)
+     (let* ((id      (alist-get 'id   filter))
+	    (name    (alist-get 'name filter)))
+       `(,(format "%+6s: %s" id name) . ,filter)))
+   filters))
+
+(defun helm-jira--helm-action-open-filter-in-browser (filter)
+  "Open the given `FILTER' in the browser."
+  (let ((viewUrl (alist-get 'viewUrl filter)))
+    (browse-url-default-browser viewUrl)))
+
+(defun helm-jira-helm-get-favourite-filters ()
+  (interactive)
+  (helm-jira--fetch-get-favourite-filters
+   (lambda (filters)
+     (let* ((helm-src
+             (helm-build-sync-source "favourite-filters"
+               :candidates (helm-jira--build-candidate-get-favourite-filters filters)
+               :action (helm-make-actions
+                        "Open in browser" #'helm-jira--helm-action-open-filter-in-browser))))
+       (helm :sources helm-src)))))
+
 (provide 'helm-jira)
 ;;; helm-jira.el ends here
