@@ -107,37 +107,6 @@
 ;;              (lambda (&key data &allow-other-keys)
 ;;                (funcall callback (alist-get 'issues data))))))
 
-;; modified
-(defun helm-jira-fetch-issues (project-key callback)
-  "Fetch issues of specified project-key and call `CALLBACK' with the resulting list."
-  (let (issues          ; for all issues are stacked
-	nissues         ; the number of issues on each request
-	(startAt 0)     ; startAt=0 if you want to show id from 1, in case startAt=1, shows id from 2
-	(maxResults 100)) ; fixed
-
-    (helm-jira-request
-     (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=PROJECT=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults project-key)
-     :parser 'json-read
-     :success (function*
-	       (lambda (&key data &allow-other-keys)
-		 (let ((tissues (alist-get 'issues data))) ; tissues: tmp issues
-		   (setq nissues (length tissues))
-		   (setq startAt nissues)
-		   (setq issues (vconcat issues tissues))))))
-
-    (while (>= nissues maxResults)
-      (helm-jira-request
-       (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=PROJECT=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults project-key)
-       :parser 'json-read
-       :success (function*
-		 (lambda (&key data &allow-other-keys)
-		   (let ((tissues (alist-get 'issues data))) ; tissues: tmp issues
-		     (setq nissues (length tissues))
-		     (setq startAt (+ startAt nissues))
-		     (setq issues (vconcat issues tissues)))))))
-
-    (funcall callback issues)))
-
 (defun helm-jira-fetch-pull-requests (callback)
   "Fetch all open pull requests for the configured project and repo and call `CALLBACK' with the resulting list."
   (helm-jira-request
@@ -161,10 +130,10 @@
   "Take `ISSUES' as returned by ‘helm-jira-fetch-issues’ and build a suitable candidate list for helm with it."
   (mapcar
    (lambda (issue)
-     (let* ((key (alist-get 'key issue))
-            (fields (alist-get 'fields issue))
-            (summary (alist-get 'summary fields)))
-       `(,(format "%s: %s" key summary) . ,issue)))
+     (let* ((key     (let-alist issue .key))
+	    (status  (let-alist issue .fields.status.name))
+            (summary (let-alist issue .fields.summary)))
+       `(,(format "%-15s: %-11s %s" key status summary) . ,issue))) ; need to modify project-name length '-' 4digit key id
    issues))
 
 (defun helm-jira-build-candidate-list-from-pull-requests (pull-requests)
@@ -181,7 +150,6 @@
                   (propertize (concat "@" author-name) 'font-lock-face 'font-lock-comment-face)) . ,pr)))
    pull-requests))
 
-;; original
 ;; (defun helm-jira-helm-issues ()
 ;;   "Fetch a list of issues from JIRA and prompt for selection of one."
 ;;   (interactive)
@@ -195,23 +163,81 @@
 ;;                         "Open in browser" #'helm-jira-helm-action-open-issue-in-browser))))
 ;;        (helm :sources helm-src)))))
 
-;; modified
-(defun helm-jira-helm-issues (&optional project-key)
+(defun helm-jira-search-for-issues-using-jql (&optional project-key)
   "Fetch a list of issues from JIRA and prompt for selection of one."
   (interactive)
+  (if project-key
+      (helm-jira--search-for-issues-using-jql (format "project=%s" project-key))
+    (if helm-jira-project
+	(helm-jira--search-for-issues-using-jql (format "project=%s" helm-jira-project))
+      (message "[error] helm-jira: specify helm-jira-project!"))))
 
-  (unless project-key
-    (setq project-key helm-jira-project))
+(defun helm-jira--build-candidate-search-for-issues-using-jql (issues)
+  "Take `ISSUES' as returned by ‘helm-jira-fetch-issues’ and build a suitable candidate list for helm with it."
+  (mapcar
+   (lambda (issue)
+     (let* ((key       (let-alist issue .key))
+	    (issuetype (let-alist issue .fields.issuetype.name))
+	    (status    (let-alist issue .fields.status.name))
+            (summary   (let-alist issue .fields.summary)))
+       `(,(format "%-15s: %-8s %-11s %s" key issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
+   issues))
 
-  (helm-jira-fetch-issues project-key
+(defun helm-jira--action-open-issue-in-buffer (issue)
+  "Open the given `ISSUE' in the buffer."
+  (let ((buffer-name (alist-get 'key issue)))
+    ;;(with-current-buffer (get-buffer-create buffer-name)
+    (with-output-to-temp-buffer buffer-name)
+      (erase-buffer)
+      (insert (format "key: %s\n"         (let-alist issue .key)))
+      (insert (format "issuetype: %s\n"   (let-alist issue .fields.issuetype.name)))
+      (insert (format "summary: %s\n"     (let-alist issue .fields.summary)))
+      (insert (format "Defect_Rank: %s\n" (let-alist issue .fields.customfield_10013.value)))
+      (insert (format "Frequency: %s\n"   (let-alist issue .fields.customfield_10013.value)))
+      (insert (format "FixType: %s\n"     (let-alist issue .fields.customfield_10030.value)))
+      (insert (format "Assignee: %s\n"    (let-alist issue .fields.assignee.displayName)))
+      (switch-to-buffer (get-buffer buffer-name))
+      )))
+
+(defun helm-jira--action-open-issue-in-browser (issue)
+  "Open the given `ISSUE' in the browser."
+  (let ((key (alist-get 'key issue)))
+    (browse-url-default-browser (format "%s/browse/%s" helm-jira-url key))))
+
+(defun helm-jira--search-for-issues-using-jql (jql)
+  "Fetch a list of issues from JIRA with jql."
+  (message "[debug] --search-for-issues-using-jql")
+  (helm-jira--fetch-search-for-issues-using-jql jql
    (lambda (issues)
      (let* ((helm-src
              (helm-build-sync-source "jira-issues-source"
-               :candidates (helm-jira-build-candidate-list-from-issues issues)
+               :candidates (helm-jira--build-candidate-search-for-issues-using-jql issues)
                :action (helm-make-actions
-                        "Open in browser" #'helm-jira-helm-action-open-issue-in-browser))))
+			"Show issue"      #'helm-jira--action-open-issue-in-buffer
+			"Open in browser" #'helm-jira--action-open-issue-in-browser))))
        (helm :sources helm-src
 	     :candidate-number-limit 10000)))))
+
+(defun helm-jira--fetch-search-for-issues-using-jql (jql callback)
+  "Fetch issues of specified project-key and call `CALLBACK' with the resulting list."
+  (let (issues          ; for all issues are stacked
+	nissues         ; the number of issues on each request
+	(startAt 0)     ; startAt=0 if you want to show id from 1, in case startAt=1, shows id from 2
+	(maxResults 100)) ; fixed
+    (cl-loop do
+	     (message "[debug] --fetch-search-for-issues-using-jql startAt: %d" startAt)
+	     (helm-jira-request
+	      ;; (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults jql)
+	      (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&jql=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults jql)
+	      :parser 'json-read
+	      :success (function*
+			(lambda (&key data &allow-other-keys)
+			  (let ((tissues (alist-get 'issues data))) ; tissues: tmp issues
+			    (setq nissues (length tissues))
+			    (setq startAt (+ startAt nissues))
+			    (setq issues (vconcat issues tissues))))))
+	     while (>= nissues maxResults))
+    (funcall callback issues)))
 
 (defun helm-jira-helm-pull-requests ()
   "Fetch a list of pull-requests from Bitbucket and prompt for selection of one to open in the browser."
@@ -272,12 +298,13 @@
     (magit-checkout branch-name)))
 
 ;; added, the followings
-(defun helm-jira-helm-action-list-issues (project)
+;; Get all projects
+(defun helm-jira--action-get-all-projects-list-issues (project)
   "list `ISSUES'. of project"
-  (let ((project-key (alist-get 'key project)))
-    (helm-jira-helm-issues project-key)))
+  (let ((jql (format "project=%s" (alist-get 'key project))))
+    (helm-jira--search-for-issues-using-jql jql)))
 
-(defun helm-jira-fetch-projects (callback)
+(defun helm-jira--fetch-get-all-projects (callback)
   "Fetch all projects"
   (helm-jira-request
    (format "%s/rest/api/latest/project" helm-jira-url)
@@ -286,7 +313,7 @@
              (lambda (&key data &allow-other-keys)
                (funcall callback data)))))
 
-(defun helm-jira-build-candidate-list-from-projects (projects)
+(defun helm-jira--build-candidate-get-all-projects (projects)
   "Take `PROJECTS' as returned by‘helm-jira-fetch-projects’ and build a suitable candidate list for helm with it."
   (mapcar
    (lambda (project)
@@ -295,25 +322,25 @@
        `(,(format "%-17s: %s" key name) . ,project)))
    projects))
 
-(defun helm-jira-helm-action-open-project-in-browser (project)
+(defun helm-jira--action-get-all-projects-browser-issues (project)
   "Open the given `PROJECT' in the browser."
   (let ((key (alist-get 'key project)))
     (browse-url-default-browser (format "%s/browse/%s" helm-jira-url key))))
 
-(defun helm-jira-helm-projects ()
+(defun helm-jira-get-all-projects ()
   "Fetch project list from JIRA and prompt for selection of one."
   (interactive)
-  (helm-jira-fetch-projects
+  (helm-jira--fetch-get-all-projects
    (lambda (projects)
      (let* ((helm-src
              (helm-build-sync-source "jira-projects-source"
-               :candidates (helm-jira-build-candidate-list-from-projects projects)
+               :candidates (helm-jira--build-candidate-get-all-projects projects)
                :action (helm-make-actions
-			"List Issues"     #'helm-jira-helm-action-list-issues
-                        "Open in browser" #'helm-jira-helm-action-open-project-in-browser))))
+			"List Issues"     #'helm-jira--action-get-all-projects-list-issues
+                        "Open in browser" #'helm-jira--action-get-all-projects-browser-issues))))
        (helm :sources helm-src)))))
 
-;; filter
+;; Get favourite filters
 (defun helm-jira--fetch-get-favourite-filters (callback)
   (helm-jira-request
    (format "%s/rest/api/latest/filter/favourite" helm-jira-url)
@@ -331,12 +358,16 @@
        `(,(format "%+6s: %s" id name) . ,filter)))
    filters))
 
-(defun helm-jira--helm-action-open-filter-in-browser (filter)
+(defun helm-jira--action-get-favourite-filters-list-issues (filter)
+  (let ((jql (format "filter=%s" (alist-get 'id filter))))
+    (helm-jira--search-for-issues-using-jql jql)))
+
+(defun helm-jira--action-get-favourite-filters-browser-issues (filter)
   "Open the given `FILTER' in the browser."
   (let ((viewUrl (alist-get 'viewUrl filter)))
     (browse-url-default-browser viewUrl)))
 
-(defun helm-jira-helm-get-favourite-filters ()
+(defun helm-jira-get-favourite-filters ()
   (interactive)
   (helm-jira--fetch-get-favourite-filters
    (lambda (filters)
@@ -344,8 +375,56 @@
              (helm-build-sync-source "favourite-filters"
                :candidates (helm-jira--build-candidate-get-favourite-filters filters)
                :action (helm-make-actions
-                        "Open in browser" #'helm-jira--helm-action-open-filter-in-browser))))
+                        "List issues"     #'helm-jira--action-get-favourite-filters-list-issues
+                        "Open in browser" #'helm-jira--action-get-favourite-filters-browser-issues))))
        (helm :sources helm-src)))))
+
+;; Add attachment
+(defun helm-jira-request2 (&rest args)
+  "Call `request' with the supplied `ARGS', but ensure that a password is set and credentials are supplied."
+  (helm-jira-ensure-password)
+  (apply 'request (append args
+			  '(:sync t))))
+
+(defun helm-jira--add-atachment (issueIdOrKey files callback)
+  "add attachment files in JIRA issueIdOrKey
+files should be in list with absolute path
+callback specified nil
+"
+  (message "[helm-jira--add-attachment] uploading....")
+  (helm-jira-request2
+   ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
+   (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
+   :type "POST"
+   :headers '(("X-Atlassian-Token" . "no-check"))
+   :files (mapcar (lambda (file) `("file" . ,file)) files)
+   :success (function*
+             (lambda (&key data &allow-other-keys)
+               ;;(funcall callback data)
+	       (message "[helm-jira-add-atachment] uploaded!")))
+   :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+			 (message "[helm-jira--add-attachment] error: %S" error-thrown)))))
+
+(defun helm-jira-add-atachment ()
+  "Add attachments with the files marked in Dired in JIRA key specified by arg"
+  (interactive)
+  (let ((marked-files (when (> (string-to-number (dired-number-of-marked-files)) 0) (dired-get-marked-files)))
+	(limitsize 40000000) ; upload limit size
+	uploadfiles
+	jira-key)
+    (if marked-files
+	(progn
+	  (setq jira-key (string-to-number (read-string "Jira Key: ")))
+	  (setq uploadfiles
+		(delq nil (mapcar (lambda (file)
+				    (if (> (file-attribute-size (file-attributes file)) limitsize)
+					(progn
+					  (message "%s > %s" file limitsize)
+					  nil)
+				      file)) marked-files)))
+	  (if uploadfiles
+	      (helm-jira--add-atachment jira-key uploadfiles nil)))
+      (message "[helm-jira-add-atachment] no marked files!"))))
 
 (provide 'helm-jira)
 ;;; helm-jira.el ends here
