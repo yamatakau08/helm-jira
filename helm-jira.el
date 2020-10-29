@@ -186,18 +186,20 @@
 (defun helm-jira--action-open-issue-in-buffer (issue)
   "Open the given `ISSUE' in the buffer."
   (let ((buffer-name (alist-get 'key issue)))
-    ;;(with-current-buffer (get-buffer-create buffer-name)
-    (with-output-to-temp-buffer buffer-name)
-      (erase-buffer)
-      (insert (format "key: %s\n"         (let-alist issue .key)))
-      (insert (format "issuetype: %s\n"   (let-alist issue .fields.issuetype.name)))
-      (insert (format "summary: %s\n"     (let-alist issue .fields.summary)))
-      (insert (format "Defect_Rank: %s\n" (let-alist issue .fields.customfield_10013.value)))
-      (insert (format "Frequency: %s\n"   (let-alist issue .fields.customfield_10013.value)))
-      (insert (format "FixType: %s\n"     (let-alist issue .fields.customfield_10030.value)))
-      (insert (format "Assignee: %s\n"    (let-alist issue .fields.assignee.displayName)))
-      (switch-to-buffer (get-buffer buffer-name))
-      )))
+    (with-output-to-temp-buffer buffer-name
+      (princ
+       (mapconcat
+	(lambda (field) (format "%s: %s" (car field) (cdr field)))
+	(let-alist issue
+	  (list
+	   (cons "key"         .key)
+	   (cons "issuetype"   .fields.issuetype.name)
+	   (cons "summary"     .fields.summary)
+	   (cons "Defect_Rank" .fields.customfield_10013.value)
+	   (cons "Frequency"   .fields.customfield_10023.value)
+	   (cons "FixType"     .fields.customfield_10030.value)
+	   (cons "Assignee"    .fields.assignee.displayName)))
+	"\n")))))
 
 (defun helm-jira--action-open-issue-in-browser (issue)
   "Open the given `ISSUE' in the browser."
@@ -414,7 +416,7 @@ callback specified nil
 	jira-key)
     (if marked-files
 	(progn
-	  (setq jira-key (string-to-number (read-string "Jira Key: ")))
+	  (setq jira-key (read-string "Jira Key: "))
 	  (setq uploadfiles
 		(delq nil (mapcar (lambda (file)
 				    (if (> (file-attribute-size (file-attributes file)) limitsize)
