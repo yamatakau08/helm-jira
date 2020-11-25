@@ -170,7 +170,7 @@
       (helm-jira--search-for-issues-using-jql (format "project=%s" project-key))
     (if helm-jira-project
 	(helm-jira--search-for-issues-using-jql (format "project=%s" helm-jira-project))
-      (message "[error] helm-jira: specify helm-jira-project!"))))
+      (message "[error] %s: specify helm-jira-project!" this-command))))
 
 (defun helm-jira--build-candidate-search-for-issues-using-jql (issues)
   "Take `ISSUES' as returned by ‘helm-jira-fetch-issues’ and build a suitable candidate list for helm with it."
@@ -208,7 +208,6 @@
 
 (defun helm-jira--search-for-issues-using-jql (jql)
   "Fetch a list of issues from JIRA with jql."
-  (message "[debug] --search-for-issues-using-jql")
   (helm-jira--fetch-search-for-issues-using-jql jql
    (lambda (issues)
      (let* ((helm-src
@@ -227,7 +226,7 @@
 	(startAt 0)     ; startAt=0 if you want to show id from 1, in case startAt=1, shows id from 2
 	(maxResults 100)) ; fixed
     (cl-loop do
-	     (message "[debug] --fetch-search-for-issues-using-jql startAt: %d" startAt)
+	     (message "[info] %s startAt: %d" this-command startAt)
 	     (helm-jira-request
 	      ;; (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults jql)
 	      (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&jql=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults jql)
@@ -386,7 +385,7 @@
   "add attachment files in JIRA issueIdOrKey
 files should be in list with absolute path
 callback specified nil"
-  (message "[helm-jira--add-attachment] uploading....")
+  (message "[info] %s: uploading...." this-command)
   (helm-jira-request
    ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
@@ -396,9 +395,9 @@ callback specified nil"
    :success (function*
              (lambda (&key data &allow-other-keys)
                ;;(funcall callback data)
-	       (message "[helm-jira-add-atachment] uploaded!")))
+	       (message "[info] %s uploaded!" this-command)))
    :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
-			 (message "[helm-jira--add-attachment] error: %S" error-thrown)))))
+			 (message "[error] %s: %S" this-command error-thrown)))))
 
 (defun helm-jira-add-atachment ()
   "Add attachments with the files marked in Dired in JIRA key specified by arg"
@@ -414,12 +413,12 @@ callback specified nil"
 		(delq nil (mapcar (lambda (file)
 				    (if (> (file-attribute-size (file-attributes file)) limitsize)
 					(progn
-					  (message "%s > %s" file limitsize)
+					  (message "[warn] %s: %s > %s" this-command file limitsize)
 					  nil)
 				      file)) marked-files)))
 	  (if uploadfiles
 	      (helm-jira--add-atachment jira-key uploadfiles nil)))
-      (message "[helm-jira-add-atachment] no marked files!"))))
+      (message "[warn] %s: no marked files!" this-command))))
 
 (provide 'helm-jira)
 ;;; helm-jira.el ends here
