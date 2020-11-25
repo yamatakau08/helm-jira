@@ -133,7 +133,7 @@
      (let* ((key     (let-alist issue .key))
 	    (status  (let-alist issue .fields.status.name))
             (summary (let-alist issue .fields.summary)))
-       `(,(format "%-15s: %-11s %s" key status summary) . ,issue))) ; need to modify project-name length '-' 4digit key id
+       `(,(format "%-15s: %-12s %s" key status summary) . ,issue))) ; need to modify project-name length '-' 4digit key id
    issues))
 
 (defun helm-jira-build-candidate-list-from-pull-requests (pull-requests)
@@ -180,7 +180,7 @@
 	    (issuetype (let-alist issue .fields.issuetype.name))
 	    (status    (let-alist issue .fields.status.name))
             (summary   (let-alist issue .fields.summary)))
-       `(,(format "%-15s: %-8s %-11s %s" key issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
+       `(,(format "%-15s: %-11s %-11s %s" key issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
    issues))
 
 (defun helm-jira--action-open-issue-in-buffer (issue)
@@ -215,8 +215,8 @@
              (helm-build-sync-source "jira-issues-source"
                :candidates (helm-jira--build-candidate-search-for-issues-using-jql issues)
                :action (helm-make-actions
-			"Show issue"      #'helm-jira--action-open-issue-in-buffer
-			"Open in browser" #'helm-jira--action-open-issue-in-browser))))
+			"Open in browser" #'helm-jira--action-open-issue-in-browser
+			"Show issue"      #'helm-jira--action-open-issue-in-buffer))))
        (helm :sources helm-src
 	     :candidate-number-limit 10000)))))
 
@@ -382,19 +382,12 @@
        (helm :sources helm-src)))))
 
 ;; Add attachment
-(defun helm-jira-request2 (&rest args)
-  "Call `request' with the supplied `ARGS', but ensure that a password is set and credentials are supplied."
-  (helm-jira-ensure-password)
-  (apply 'request (append args
-			  '(:sync t))))
-
 (defun helm-jira--add-atachment (issueIdOrKey files callback)
   "add attachment files in JIRA issueIdOrKey
 files should be in list with absolute path
-callback specified nil
-"
+callback specified nil"
   (message "[helm-jira--add-attachment] uploading....")
-  (helm-jira-request2
+  (helm-jira-request
    ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
    :type "POST"
