@@ -385,7 +385,7 @@
   "add attachment files in JIRA issueIdOrKey
 files should be in list with absolute path
 callback specified nil"
-  (message "[info] %s: uploading...." this-command)
+  (message "[info] helm-jira--add-atachment: uploading....")
   (helm-jira-request
    ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
@@ -395,7 +395,7 @@ callback specified nil"
    :success (function*
              (lambda (&key data &allow-other-keys)
                ;;(funcall callback data)
-	       (message "[info] %s uploaded!" this-command)))
+	       (message "[info] helm-jira--add-atachment %s uploaded!" issueIdOrKey)))
    :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
 			 (message "[error] %s: %S" this-command error-thrown)))))
 
