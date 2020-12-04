@@ -395,7 +395,7 @@ callback specified nil"
    :success (function*
              (lambda (&key data &allow-other-keys)
                ;;(funcall callback data)
-	       (message "[info] helm-jira--add-atachment %s uploaded!" issueIdOrKey)))
+	       (message "helm-jira--add-atachment %s uploaded!" issueIdOrKey)))
    :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
 			 (message "[error] %s: %S" this-command error-thrown)))))
 
