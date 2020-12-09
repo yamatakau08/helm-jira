@@ -215,7 +215,8 @@
                :candidates (helm-jira--build-candidate-search-for-issues-using-jql issues)
                :action (helm-make-actions
 			"Open in browser" #'helm-jira--action-open-issue-in-browser
-			"Show issue"      #'helm-jira--action-open-issue-in-buffer))))
+			"Show issue"      #'helm-jira--action-open-issue-in-buffer)
+	       :migemo t)))
        (helm :sources helm-src
 	     :candidate-number-limit 10000)))))
 
@@ -338,7 +339,8 @@
                :candidates (helm-jira--build-candidate-get-all-projects projects)
                :action (helm-make-actions
 			"List Issues"     #'helm-jira--action-get-all-projects-list-issues
-                        "Open in browser" #'helm-jira--action-get-all-projects-browser-issues))))
+                        "Open in browser" #'helm-jira--action-get-all-projects-browser-issues)
+	       :migemo t)))
        (helm :sources helm-src)))))
 
 ;; Get favourite filters
@@ -377,7 +379,8 @@
                :candidates (helm-jira--build-candidate-get-favourite-filters filters)
                :action (helm-make-actions
                         "List issues"     #'helm-jira--action-get-favourite-filters-list-issues
-                        "Open in browser" #'helm-jira--action-get-favourite-filters-browser-issues))))
+                        "Open in browser" #'helm-jira--action-get-favourite-filters-browser-issues)
+	       :migemo t)))
        (helm :sources helm-src)))))
 
 ;; Add attachment
