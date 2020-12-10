@@ -181,7 +181,7 @@
 	   (issuetype   (let-alist issue .fields.issuetype.name))
 	   (status      (let-alist issue .fields.status.name))
            (summary     (let-alist issue .fields.summary)))
-       `(,(format "%-15s: %s %-11s %-11s %s" key defect_rank issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
+	   `(,(format "%-15s: %s %-11s %-11s %s" key (if defect_rank defect_rank " ")  issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
    issues))
 
 (defun helm-jira--action-open-issue-in-buffer (issue)
