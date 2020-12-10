@@ -176,11 +176,12 @@
   "Take `ISSUES' as returned by ‘helm-jira-fetch-issues’ and build a suitable candidate list for helm with it."
   (mapcar
    (lambda (issue)
-     (let* ((key       (let-alist issue .key))
-	    (issuetype (let-alist issue .fields.issuetype.name))
-	    (status    (let-alist issue .fields.status.name))
-            (summary   (let-alist issue .fields.summary)))
-       `(,(format "%-15s: %-11s %-11s %s" key issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
+     (let ((key         (let-alist issue .key))
+	   (defect_rank (let-alist issue .fields.customfield_10013.value))
+	   (issuetype   (let-alist issue .fields.issuetype.name))
+	   (status      (let-alist issue .fields.status.name))
+           (summary     (let-alist issue .fields.summary)))
+       `(,(format "%-15s: %s %-11s %-11s %s" key defect_rank issuetype status summary) . ,issue))) ; need to modify key project-name + length '-' 4digit key id
    issues))
 
 (defun helm-jira--action-open-issue-in-buffer (issue)
@@ -383,12 +384,29 @@
 	       :migemo t)))
        (helm :sources helm-src)))))
 
+;; Get current user
+(defun helm-jira--get-current-user ()
+  (helm-jira-request
+   ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-myself/#api-rest-api-3-myself-get
+   (format "%s/rest/api/latest/myself" helm-jira-url)
+   :success (function*
+             (lambda (&key data &allow-other-keys)
+	       (message "helm-jira--get-current-user: %s" data)))
+   :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+			 (message "[error] helm-jira--get-current-user: %S" error-thrown)))))
+
 ;; Add attachment
-(defun helm-jira--add-atachment (issueIdOrKey files callback)
+(defun helm-jira--add-ataachment (issueIdOrKey files callback)
   "add attachment files in JIRA issueIdOrKey
 files should be in list with absolute path
 callback specified nil"
-  (message "[info] helm-jira--add-atachment: uploading....")
+
+  ;; Eventhoug helm-jira-build-auth-header is available,
+  ;; add-attachment sometimes fails 401 {"errorMessages":["You do not have the permission to see the specified issue.","Login Required"],"errors":{}}
+  ;; so, dummy call for uploading
+  (helm-jira--get-current-user)
+
+  (message "helm-jira--add-ataachment: uploading....")
   (helm-jira-request
    ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
@@ -398,11 +416,12 @@ callback specified nil"
    :success (function*
              (lambda (&key data &allow-other-keys)
                ;;(funcall callback data)
-	       (message "helm-jira--add-atachment %s uploaded!" issueIdOrKey)))
+	       (message "[debug] helm-jira--add-attachment success: %s" data)
+	       (message "helm-jira--add-ataachment %s uploaded!" issueIdOrKey)))
    :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
-			 (message "[error] %s: %S" this-command error-thrown)))))
+			 (message "[error] helm-jira--add-ataachment: %S" error-thrown)))))
 
-(defun helm-jira-add-atachment ()
+(defun helm-jira-add-ataachment ()
   "Add attachments with the files marked in Dired in JIRA key specified by arg"
   (interactive)
   (let ((marked-files (when (> (string-to-number (dired-number-of-marked-files)) 0) (dired-get-marked-files)))
@@ -420,8 +439,8 @@ callback specified nil"
 					  nil)
 				      file)) marked-files)))
 	  (if uploadfiles
-	      (helm-jira--add-atachment jira-key uploadfiles nil)))
-      (message "[warn] %s: no marked files!" this-command))))
+	      (helm-jira--add-ataachment jira-key uploadfiles nil)))
+      (message "helm-jira-add-attachment %s: no marked files!"))))
 
 (provide 'helm-jira)
 ;;; helm-jira.el ends here
