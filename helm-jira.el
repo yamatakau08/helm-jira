@@ -207,6 +207,22 @@
   (let ((key (alist-get 'key issue)))
     (browse-url-default-browser (format "%s/browse/%s" helm-jira-url key))))
 
+(defun helm-jira--back-from-issues (dummy)
+  (cond ((eq helm-jira--issues-from 'projects)
+	 (helm-jira-get-all-projects))
+	((eq helm-jira--issues-from 'filters)
+	 (helm-jira-get-favourite-filters))
+	(t
+	 (helm-jira-get-all-projects))))
+
+(defun helm-jira--back-string ()
+  (cond ((eq helm-jira--issues-from 'projects)
+	 "projects")
+	((eq helm-jira--issues-from 'filters)
+	 "filters")
+	(t
+	 "???")))
+
 (defun helm-jira--search-for-issues-using-jql (jql)
   "Fetch a list of issues from JIRA with jql."
   (helm-jira--fetch-search-for-issues-using-jql jql
@@ -215,11 +231,12 @@
              (helm-build-sync-source "jira-issues-source"
                :candidates (helm-jira--build-candidate-search-for-issues-using-jql issues)
                :action (helm-make-actions
-			"Open in browser" #'helm-jira--action-open-issue-in-browser
-			"Show issue"      #'helm-jira--action-open-issue-in-buffer)
+			"Open in browser"        #'helm-jira--action-open-issue-in-browser
+			(helm-jira--back-string) #'helm-jira--back-from-issues
+			"Show issue"             #'helm-jira--action-open-issue-in-buffer)
 	       :migemo t)))
        (helm :sources helm-src
-	     :candidate-number-limit 10000)))))
+	     :candidate-number-limit 20000)))))
 
 (defun helm-jira--fetch-search-for-issues-using-jql (jql callback)
   "Fetch issues of specified project-key and call `CALLBACK' with the resulting list."
@@ -228,7 +245,7 @@
 	(startAt 0)     ; startAt=0 if you want to show id from 1, in case startAt=1, shows id from 2
 	(maxResults 100)) ; fixed
     (cl-loop do
-	     (message "[info] %s startAt: %d" this-command startAt)
+	     (message "helm-jira--fetch-search-for-issues-using-jql startAt: %d" startAt)
 	     (helm-jira-request
 	      ;; (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&fields=summary&jql=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults jql)
 	      (format "%s/rest/api/latest/search?startAt=%s&maxResults=%s&jql=%s+ORDER+BY+key+ASC" helm-jira-url startAt maxResults jql)
@@ -301,9 +318,12 @@
     (magit-checkout branch-name)))
 
 ;; added, the followings
+(defvar helm-jira--issues-from nil)
+
 ;; Get all projects
 (defun helm-jira--action-get-all-projects-list-issues (project)
   "list `ISSUES'. of project"
+  (setq helm-jira--issues-from 'projects)
   (let ((jql (format "project=%s" (alist-get 'key project))))
     (helm-jira--search-for-issues-using-jql jql)))
 
@@ -341,8 +361,10 @@
                :action (helm-make-actions
 			"List Issues"     #'helm-jira--action-get-all-projects-list-issues
                         "Open in browser" #'helm-jira--action-get-all-projects-browser-issues)
+	       :persistent-action #'ignore
 	       :migemo t)))
-       (helm :sources helm-src)))))
+       (helm :sources helm-src
+	     :input   (when helm-jira-project helm-jira-project))))))
 
 ;; Get favourite filters
 (defun helm-jira--fetch-get-favourite-filters (callback)
@@ -363,6 +385,7 @@
    filters))
 
 (defun helm-jira--action-get-favourite-filters-list-issues (filter)
+  (setq helm-jira--issues-from 'filters)
   (let ((jql (format "filter=%s" (alist-get 'id filter))))
     (helm-jira--search-for-issues-using-jql jql)))
 
@@ -381,8 +404,9 @@
                :action (helm-make-actions
                         "List issues"     #'helm-jira--action-get-favourite-filters-list-issues
                         "Open in browser" #'helm-jira--action-get-favourite-filters-browser-issues)
-	       :migemo t)))
-       (helm :sources helm-src)))))
+	       migemo t)))
+       (helm :sources helm-src
+	     :input   (when helm-jira-project helm-jira-project))))))
 
 ;; Get current user
 (defun helm-jira--get-current-user ()
@@ -396,7 +420,7 @@
 			 (message "[error] helm-jira--get-current-user: %S" error-thrown)))))
 
 ;; Add attachment
-(defun helm-jira--add-ataachment (issueIdOrKey files callback)
+(defun helm-jira--add-attachment (issueIdOrKey files callback)
   "add attachment files in JIRA issueIdOrKey
 files should be in list with absolute path
 callback specified nil"
@@ -406,7 +430,7 @@ callback specified nil"
   ;; so, dummy call for uploading
   (helm-jira--get-current-user)
 
-  (message "helm-jira--add-ataachment: uploading....")
+  (message "helm-jira--add-attachment: uploading....")
   (helm-jira-request
    ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
@@ -417,11 +441,11 @@ callback specified nil"
              (lambda (&key data &allow-other-keys)
                ;;(funcall callback data)
 	       (message "[debug] helm-jira--add-attachment success: %s" data)
-	       (message "helm-jira--add-ataachment %s uploaded!" issueIdOrKey)))
+	       (message "helm-jira--add-attachment %s uploaded!" issueIdOrKey)))
    :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
-			 (message "[error] helm-jira--add-ataachment: %S" error-thrown)))))
+			 (message "[error] helm-jira--add-attachment: %S" error-thrown)))))
 
-(defun helm-jira-add-ataachment ()
+(defun helm-jira-add-attachment ()
   "Add attachments with the files marked in Dired in JIRA key specified by arg"
   (interactive)
   (let ((marked-files (when (> (string-to-number (dired-number-of-marked-files)) 0) (dired-get-marked-files)))
@@ -435,11 +459,11 @@ callback specified nil"
 		(delq nil (mapcar (lambda (file)
 				    (if (> (file-attribute-size (file-attributes file)) limitsize)
 					(progn
-					  (message "[warn] %s: %s > %s" this-command file limitsize)
+					  (message "[warn] helm-jira-add-attachment: %s > %s" file limitsize)
 					  nil)
 				      file)) marked-files)))
 	  (if uploadfiles
-	      (helm-jira--add-ataachment jira-key uploadfiles nil)))
+	      (helm-jira--add-attachment jira-key uploadfiles nil)))
       (message "helm-jira-add-attachment %s: no marked files!"))))
 
 (provide 'helm-jira)
