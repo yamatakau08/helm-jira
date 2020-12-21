@@ -404,7 +404,8 @@
                :action (helm-make-actions
                         "List issues"     #'helm-jira--action-get-favourite-filters-list-issues
                         "Open in browser" #'helm-jira--action-get-favourite-filters-browser-issues)
-	       migemo t)))
+	       :persistent-action #'ignore
+	       :migemo t)))
        (helm :sources helm-src
 	     :input   (when helm-jira-project helm-jira-project))))))
 
