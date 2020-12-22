@@ -327,8 +327,9 @@
   (let ((jql (format "project=%s" (alist-get 'key project))))
     (helm-jira--search-for-issues-using-jql jql)))
 
-(defun helm-jira--fetch-get-all-projects (callback)
-  "Fetch all projects"
+(defun helm-jira--get-all-projects (callback)
+  "Get all projects
+https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-projects/#api-rest-api-3-project-get"
   (helm-jira-request
    (format "%s/rest/api/latest/project" helm-jira-url)
    :parser 'json-read
@@ -353,7 +354,7 @@
 (defun helm-jira-get-all-projects ()
   "Fetch project list from JIRA and prompt for selection of one."
   (interactive)
-  (helm-jira--fetch-get-all-projects
+  (helm-jira--get-all-projects
    (lambda (projects)
      (let* ((helm-src
              (helm-build-sync-source "jira-projects-source"
@@ -367,7 +368,9 @@
 	     :input   (when helm-jira-project helm-jira-project))))))
 
 ;; Get favourite filters
-(defun helm-jira--fetch-get-favourite-filters (callback)
+(defun helm-jira--get-favourite-filters (callback)
+  "Get favorite filters
+https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-filters/#api-rest-api-3-filter-favourite-get"
   (helm-jira-request
    (format "%s/rest/api/latest/filter/favourite" helm-jira-url)
    :parser 'json-read
@@ -395,8 +398,9 @@
     (browse-url-default-browser viewUrl)))
 
 (defun helm-jira-get-favourite-filters ()
+  "Get favorite filters"
   (interactive)
-  (helm-jira--fetch-get-favourite-filters
+  (helm-jira--get-favourite-filters
    (lambda (filters)
      (let* ((helm-src
              (helm-build-sync-source "favourite-filters"
@@ -424,16 +428,15 @@
 (defun helm-jira--add-attachment (issueIdOrKey files callback)
   "add attachment files in JIRA issueIdOrKey
 files should be in list with absolute path
-callback specified nil"
-
+callback specified nil
+https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
+"
   ;; Eventhoug helm-jira-build-auth-header is available,
   ;; add-attachment sometimes fails 401 {"errorMessages":["You do not have the permission to see the specified issue.","Login Required"],"errors":{}}
-  ;; so, dummy call for uploading
+  ;; so, dummy call for uploading.
   (helm-jira--get-current-user)
-
   (message "helm-jira--add-attachment: uploading....")
   (helm-jira-request
-   ;; https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-attachments/#api-rest-api-3-issue-issueidorkey-attachments-post
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
    :type "POST"
    :headers '(("X-Atlassian-Token" . "no-check"))
