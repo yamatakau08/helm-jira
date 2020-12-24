@@ -435,7 +435,7 @@ https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-atta
   ;; add-attachment sometimes fails 401 {"errorMessages":["You do not have the permission to see the specified issue.","Login Required"],"errors":{}}
   ;; so, dummy call for uploading.
   (helm-jira--get-current-user)
-  (message "helm-jira--add-attachment: uploading....")
+  (message "helm-jira--add-attachment: uploading in id %s ..." issueIdOrKey)
   (helm-jira-request
    (format "%s/rest/api/latest/issue/%s/attachments" helm-jira-url issueIdOrKey)
    :type "POST"
@@ -444,8 +444,7 @@ https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-atta
    :success (function*
              (lambda (&key data &allow-other-keys)
                ;;(funcall callback data)
-	       (message "[debug] helm-jira--add-attachment success: %s" data)
-	       (message "helm-jira--add-attachment %s uploaded!" issueIdOrKey)))
+	       (message "helm-jira--add-attachment: uploaded in id %s" issueIdOrKey)))
    :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
 			 (message "[error] helm-jira--add-attachment: %S" error-thrown)))))
 
